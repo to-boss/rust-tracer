@@ -5,17 +5,24 @@ use std::{
 };
 
 use rust_tracer::{
-    camera::Camera, color::*, hittable_list::HittableList, ray::Ray, sphere::Sphere, vec3::*,
+    camera::Camera,
+    color::*,
+    hittable_list::HittableList,
+    material::{Dialectric, Lambertian, Metal},
+    ray::Ray,
+    sphere::Sphere,
+    vec3::*,
     MAX_DEPTH, SAMPLES_PER_PIXEL,
 };
 
-use rand::{thread_rng, Rng};
+use rand::{rngs::ThreadRng, thread_rng, Rng};
 
 macro_rules! sphere {
-    // input:  ((0., 0., -1.), 0.5);
-    // output: Sphere::new(Vec3::new(0., 0., -1.), 0.5)
-    ($point:tt, $radius:literal) => {
-        Sphere::new(Point3::new$point, $radius)
+    ($center:ident, $radius:literal, $mat:ident) => {
+        Sphere::new($center, $radius, $mat)
+    };
+    ($point:tt, $radius:literal, $mat:ident) => {
+        Sphere::new(Point3::new$point, $radius, $mat)
     };
 }
 
@@ -28,14 +35,24 @@ fn main() -> Result<()> {
     const IMG_HEIGHT: u32 = ((IMG_WIDTH as f32) / ASPECT_RATIO) as u32;
 
     // World Setup
-    let mut world = HittableList::new();
-    let sphere = sphere!((0., 0., -1.), 0.5);
-    let sphere2 = sphere!((0., -100.5, -1.), 100.);
-    world.add(Box::new(sphere));
-    world.add(Box::new(sphere2));
+    let world = random_scene();
 
     // Camera
-    let camera = Camera::new(ASPECT_RATIO);
+    let look_from = Point3::new(13., 2., 3.);
+    let look_at = Point3::new(0., 0., 0.);
+    let v_up = Vec3::new(0., 1., 0.);
+    let aperture = 0.1;
+    let focus_dist = 10.;
+
+    let camera = Camera::new(
+        look_from,
+        look_at,
+        v_up,
+        20.,
+        ASPECT_RATIO,
+        aperture,
+        focus_dist,
+    );
 
     // Render
     let mut img_file = File::create("image.ppm")?;
@@ -65,21 +82,82 @@ fn main() -> Result<()> {
 
 fn ray_color(ray: &Ray, world: &HittableList, depth: i32) -> Color {
     let result: Color;
-    let mut rng = thread_rng();
 
     if depth > MAX_DEPTH {
         return Color::new(0., 0., 0.);
     }
 
     if let Some(hit) = world.hit(ray, 0.001, INFINITY) {
-        let target = Vec3::random_in_hemisphere(&mut rng, &hit.normal);
-        let new_color = ray_color(&Ray::new(hit.p, target - hit.p), world, depth + 1);
-        result = Color::new(new_color.x, new_color.y, new_color.z) * 0.5;
-        return result;
+        if let Some((scattered, attenuation)) = hit.material.scatter(&ray, &hit) {
+            return attenuation * ray_color(&scattered, world, depth + 1);
+        }
+        return Color::new(0., 0., 0.);
     }
 
     let unit_direction = ray.direction.unit_vector();
     let t = 0.5 * (unit_direction.y + 1.);
     result = Color::new(1., 1., 1.) * (1. - t) + Color::new(0.5, 0.7, 1.) * t;
     return result;
+}
+
+fn random_scene() -> HittableList {
+    let mut world = HittableList::new();
+    let mut rng = thread_rng();
+
+    let ground_material = Lambertian {
+        albedo: Color::new(0.5, 0.5, 0.5),
+    };
+    world.add(Box::new(sphere!((0., -1000., 0.), 1000., ground_material)));
+
+    for a in -11..11 {
+        for b in -11..11 {
+            let choose_mat: f32 = rng.gen_range(0.0..1.0);
+            let a = a as f32;
+            let b = b as f32;
+            let center = Vec3::new(
+                a + 0.9 * random_f32(&mut rng),
+                0.2,
+                b + 0.9 * random_f32(&mut rng),
+            );
+
+            if (center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
+                if choose_mat < 0.8 {
+                    // diffuse
+                    let albedo = Vec3::new_random() * Vec3::new_random();
+                    let sphere_material = Lambertian { albedo };
+                    world.add(Box::new(sphere!(center, 0.2, sphere_material)));
+                } else if choose_mat < 0.95 {
+                    // metal
+                    let albedo = Vec3::new_random_range(0.5..1.0);
+                    let fuzz = rng.gen_range(0.0..0.5);
+                    let sphere_material = Metal { albedo, fuzz };
+                    world.add(Box::new(sphere!(center, 0.2, sphere_material)));
+                } else {
+                    // glass
+                    let sphere_material = Dialectric { ir: 1.5 };
+                    world.add(Box::new(sphere!(center, 0.2, sphere_material)));
+                }
+            }
+        }
+    }
+
+    let material1 = Dialectric { ir: 1.5 };
+    world.add(Box::new(sphere!((0., 1., 0.), 1., material1)));
+
+    let material2 = Lambertian {
+        albedo: Vec3::new(0.4, 0.2, 0.1),
+    };
+    world.add(Box::new(sphere!((-4., 1., 0.), 1., material2)));
+
+    let material3 = Metal {
+        albedo: Vec3::new(0.7, 0.6, 0.5),
+        fuzz: 0.0,
+    };
+    world.add(Box::new(sphere!((4., 1., 0.), 1., material3)));
+
+    return world;
+}
+
+fn random_f32(rng: &mut ThreadRng) -> f32 {
+    return rng.gen_range(0.0..1.0);
 }

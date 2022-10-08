@@ -1,6 +1,6 @@
 use std::ops::*;
 
-use rand::{rngs::ThreadRng, Rng};
+use rand::{thread_rng, Rng};
 
 pub type Point3 = Vec3;
 pub type Color = Vec3;
@@ -17,7 +17,8 @@ impl Vec3 {
         Vec3 { x, y, z }
     }
 
-    pub fn new_random(rand: &mut ThreadRng) -> Self {
+    pub fn new_random() -> Self {
+        let mut rand = thread_rng();
         let x: f32 = rand.gen_range(0.0..1.0);
         let y: f32 = rand.gen_range(0.0..1.0);
         let z: f32 = rand.gen_range(0.0..1.0);
@@ -25,7 +26,8 @@ impl Vec3 {
         Vec3 { x, y, z }
     }
 
-    pub fn new_random_range(rand: &mut ThreadRng, range: Range<f32>) -> Vec3 {
+    pub fn new_random_range(range: Range<f32>) -> Vec3 {
+        let mut rand = thread_rng();
         let x: f32 = rand.gen_range(range.clone());
         let y: f32 = rand.gen_range(range.clone());
         let z: f32 = rand.gen_range(range);
@@ -33,12 +35,12 @@ impl Vec3 {
         Vec3 { x, y, z }
     }
 
-    pub fn new_random_in_unit_sphere(rand: &mut ThreadRng) -> Vec3 {
+    pub fn new_random_in_unit_sphere() -> Vec3 {
         let mut in_sphere = false;
-        let mut p: Vec3 = Vec3::new_random_range(rand, -1.0..1.0);
+        let mut p: Vec3 = Vec3::new_random_range(-1.0..1.0);
 
         while in_sphere == false {
-            p = Vec3::new_random_range(rand, -1.0..1.0);
+            p = Vec3::new_random_range(-1.0..1.0);
 
             if p.length_squared() >= 1.0 {
                 continue;
@@ -49,13 +51,46 @@ impl Vec3 {
         return p;
     }
 
-    pub fn random_in_hemisphere(rand: &mut ThreadRng, normal: &Vec3) -> Vec3 {
-        let in_unit_sphere = Vec3::new_random_in_unit_sphere(rand);
+    pub fn random_in_hemisphere(normal: &Vec3) -> Vec3 {
+        let in_unit_sphere = Vec3::new_random_in_unit_sphere();
         if in_unit_sphere.dot(normal) > 0.0 {
             return in_unit_sphere;
         } else {
             return -in_unit_sphere;
         }
+    }
+
+    pub fn random_in_unit_disk() -> Vec3 {
+        let mut in_unit = false;
+        let mut p: Vec3 = Vec3::new_random_range(-1.0..1.0);
+        p.z = 0.;
+
+        while in_unit == false {
+            p = Vec3::new_random_range(-1.0..1.0);
+
+            if p.length_squared() >= 1.0 {
+                continue;
+            } else {
+                in_unit = true;
+            }
+        }
+        return p;
+    }
+
+    pub fn near_zero(&self) -> bool {
+        let s = 1e-8;
+        (self.x.abs() < s) && (self.y.abs() < s) && (self.z.abs() < s)
+    }
+
+    pub fn refract(&self, n: &Vec3, etai_over_etat: f32) -> Vec3 {
+        let cos_theta = f32::min(-self.dot(n), 1.0);
+        let r_out_perp = (*self + (*n) * cos_theta) * etai_over_etat;
+        let r_out_parallel = (*n) * -f32::abs(1.0 - r_out_perp.length_squared()).sqrt();
+        r_out_parallel + r_out_perp
+    }
+
+    pub fn reflect(&self, normal: &Vec3) -> Vec3 {
+        *self - (*normal) * self.dot(normal) * 2.
     }
 
     pub fn x(&self) -> f32 {
