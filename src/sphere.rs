@@ -1,5 +1,6 @@
 use crate::{
     hittable::{HitRecord, Hittable},
+    ray::Ray,
     vec3::Point3,
 };
 
@@ -15,7 +16,7 @@ impl Sphere {
 }
 
 impl Hittable for Sphere {
-    fn hit(&self, r: &crate::ray::Ray, t_min: f32, t_max: f32, rec: &mut HitRecord) -> bool {
+    fn hit(&self, r: &Ray, t_min: f32, t_max: f32) -> Option<HitRecord> {
         let oc = r.origin - self.center;
         let a = r.direction.length_squared();
         let half_b = oc.dot(&r.direction);
@@ -23,7 +24,7 @@ impl Hittable for Sphere {
 
         let discriminant = half_b * half_b - a * c;
         if discriminant < 0.0 {
-            return false;
+            return None;
         }
         let sqrtd = discriminant.sqrt();
 
@@ -31,15 +32,21 @@ impl Hittable for Sphere {
         if root < t_min || t_max < root {
             root = (-half_b + sqrtd) / a;
             if root < t_min || t_max < root {
-                return false;
+                return None;
             }
         }
 
-        rec.t = root;
-        rec.p = r.at(rec.t);
-        let outward_normal = (rec.p - self.center) / self.radius;
-        rec.set_face_normal(&r, &outward_normal);
+        let t = root;
+        let p = r.at(root);
+        let mut normal = (p - self.center) / self.radius;
+        let front_face = r.direction.dot(&normal) < 0.0;
+        normal = if front_face { normal } else { -normal };
 
-        return true;
+        Some(HitRecord {
+            p,
+            t,
+            normal,
+            front_face,
+        })
     }
 }

@@ -4,31 +4,38 @@ use std::{
     io::{Result, Write},
 };
 
-use rust_tracer::{color::*, hittable_list::HittableList, ray::Ray, sphere::Sphere, vec3::*};
+use rust_tracer::{
+    camera::Camera, color::*, hittable_list::HittableList, ray::Ray, sphere::Sphere, vec3::*,
+    MAX_DEPTH, SAMPLES_PER_PIXEL,
+};
+
+use rand::{thread_rng, Rng};
+
+macro_rules! sphere {
+    // input:  ((0., 0., -1.), 0.5);
+    // output: Sphere::new(Vec3::new(0., 0., -1.), 0.5)
+    ($point:tt, $radius:literal) => {
+        Sphere::new(Point3::new$point, $radius)
+    };
+}
 
 fn main() -> Result<()> {
+    let mut rng = thread_rng();
+
     // Image
-    const ASPECT_RATIO: f32 = 16.0 / 9.0;
+    const ASPECT_RATIO: f32 = 16. / 9.;
     const IMG_WIDTH: u32 = 400;
     const IMG_HEIGHT: u32 = ((IMG_WIDTH as f32) / ASPECT_RATIO) as u32;
 
-    // World
+    // World Setup
     let mut world = HittableList::new();
-    let sphere = Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5);
-    let sphere2 = Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0);
+    let sphere = sphere!((0., 0., -1.), 0.5);
+    let sphere2 = sphere!((0., -100.5, -1.), 100.);
     world.add(Box::new(sphere));
     world.add(Box::new(sphere2));
 
     // Camera
-    const VIEWPORT_HEIGHT: f32 = 2.0;
-    const VIEWPORT_WIDTH: f32 = ASPECT_RATIO * VIEWPORT_HEIGHT;
-    const FOCAL_LENGTH: f32 = 1.0;
-
-    let origin = Point3::new(0.0, 0.0, 0.0);
-    let horizantal = Vec3::new(VIEWPORT_WIDTH, 0.0, 0.0);
-    let vertical = Vec3::new(0.0, VIEWPORT_HEIGHT, 0.0);
-    let lower_left_corner =
-        origin - horizantal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, FOCAL_LENGTH);
+    let camera = Camera::new(ASPECT_RATIO);
 
     // Render
     let mut img_file = File::create("image.ppm")?;
@@ -38,13 +45,15 @@ fn main() -> Result<()> {
     for j in (0..IMG_HEIGHT).rev() {
         println!("\rScanlines remaining: {} ", j);
         for i in 0..IMG_WIDTH {
-            let u = i as f32 / (IMG_WIDTH as f32 - 1.0);
-            let v = j as f32 / (IMG_HEIGHT as f32 - 1.0);
-            let r: Ray = Ray::new(
-                origin,
-                lower_left_corner + horizantal * u + vertical * v - origin,
-            );
-            let pixel_color = ray_color(&r, &world);
+            let mut pixel_color = Color::new(0., 0., 0.);
+            for _ in 0..SAMPLES_PER_PIXEL {
+                let r1: f32 = rng.gen_range(0.0..1.0);
+                let r2: f32 = rng.gen_range(0.0..1.0);
+                let u = (i as f32 + r1) / (IMG_WIDTH as f32 - 1.);
+                let v = (j as f32 + r2) / (IMG_HEIGHT as f32 - 1.);
+                let ray = camera.get_ray(u, v);
+                pixel_color += ray_color(&ray, &world, 0);
+            }
             add_color_to_string(&mut file_content, &pixel_color);
         }
     }
@@ -54,30 +63,23 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn hit_sphere(center: Point3, radius: f32, r: &Ray) -> f32 {
-    let oc: Vec3 = r.origin - center;
-    let a = r.direction.length_squared();
-    let half_b = oc.dot(&r.direction);
-    let c = oc.length_squared() - radius * radius;
-    let discrimant = half_b * half_b - a * c;
-
-    if discrimant < 0.0 {
-        return -1.0;
-    } else {
-        return (-half_b - discrimant.sqrt()) / a;
-    }
-}
-
-fn ray_color(r: &Ray, world: &HittableList) -> Color {
+fn ray_color(ray: &Ray, world: &HittableList, depth: i32) -> Color {
     let result: Color;
+    let mut rng = thread_rng();
 
-    if world.hit(r, 0.0, INFINITY) {
-        result = (Color::new(1.0, 1.0, 1.0)) * 0.5;
+    if depth > MAX_DEPTH {
+        return Color::new(0., 0., 0.);
+    }
+
+    if let Some(hit) = world.hit(ray, 0.001, INFINITY) {
+        let target = Vec3::random_in_hemisphere(&mut rng, &hit.normal);
+        let new_color = ray_color(&Ray::new(hit.p, target - hit.p), world, depth + 1);
+        result = Color::new(new_color.x, new_color.y, new_color.z) * 0.5;
         return result;
     }
 
-    let unit_direction = r.direction.unit_vector();
-    let t = 0.5 * (unit_direction.y + 1.0);
-    result = Color::new(1.0, 1.0, 1.0) * (1.0 - t) + Color::new(0.5, 0.7, 1.0) * t;
-    result
+    let unit_direction = ray.direction.unit_vector();
+    let t = 0.5 * (unit_direction.y + 1.);
+    result = Color::new(1., 1., 1.) * (1. - t) + Color::new(0.5, 0.7, 1.) * t;
+    return result;
 }

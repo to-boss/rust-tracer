@@ -21,15 +21,14 @@ impl HittableList {
         self.objects.push(object);
     }
 
-    pub fn hit(&self, r: &Ray, t_min: f32, t_max: f32) -> bool {
-        let mut temp_rec: HitRecord = HitRecord::new_empty();
-        let mut hit_anyhing = false;
+    pub fn hit(&self, r: &Ray, t_min: f32, t_max: f32) -> Option<HitRecord> {
+        let mut hit_anyhing: Option<HitRecord> = None;
         let mut closest_so_far = t_max;
 
         self.objects.iter().for_each(|obj| {
-            if obj.hit(r, t_min, closest_so_far, &mut temp_rec) {
-                hit_anyhing = true;
-                closest_so_far = temp_rec.t;
+            if let Some(hit) = obj.hit(r, t_min, closest_so_far) {
+                closest_so_far = hit.t;
+                hit_anyhing = Some(hit);
             }
         });
 

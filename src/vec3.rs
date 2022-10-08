@@ -1,5 +1,7 @@
 use std::ops::*;
 
+use rand::{rngs::ThreadRng, Rng};
+
 pub type Point3 = Vec3;
 pub type Color = Vec3;
 
@@ -13,6 +15,47 @@ pub struct Vec3 {
 impl Vec3 {
     pub fn new(x: f32, y: f32, z: f32) -> Self {
         Vec3 { x, y, z }
+    }
+
+    pub fn new_random(rand: &mut ThreadRng) -> Self {
+        let x: f32 = rand.gen_range(0.0..1.0);
+        let y: f32 = rand.gen_range(0.0..1.0);
+        let z: f32 = rand.gen_range(0.0..1.0);
+
+        Vec3 { x, y, z }
+    }
+
+    pub fn new_random_range(rand: &mut ThreadRng, range: Range<f32>) -> Vec3 {
+        let x: f32 = rand.gen_range(range.clone());
+        let y: f32 = rand.gen_range(range.clone());
+        let z: f32 = rand.gen_range(range);
+
+        Vec3 { x, y, z }
+    }
+
+    pub fn new_random_in_unit_sphere(rand: &mut ThreadRng) -> Vec3 {
+        let mut in_sphere = false;
+        let mut p: Vec3 = Vec3::new_random_range(rand, -1.0..1.0);
+
+        while in_sphere == false {
+            p = Vec3::new_random_range(rand, -1.0..1.0);
+
+            if p.length_squared() >= 1.0 {
+                continue;
+            } else {
+                in_sphere = true;
+            }
+        }
+        return p;
+    }
+
+    pub fn random_in_hemisphere(rand: &mut ThreadRng, normal: &Vec3) -> Vec3 {
+        let in_unit_sphere = Vec3::new_random_in_unit_sphere(rand);
+        if in_unit_sphere.dot(normal) > 0.0 {
+            return in_unit_sphere;
+        } else {
+            return -in_unit_sphere;
+        }
     }
 
     pub fn x(&self) -> f32 {
