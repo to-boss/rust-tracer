@@ -1,4 +1,4 @@
-use std::ops::*;
+use std::{iter::Sum, ops::*};
 
 use rand::{thread_rng, Rng};
 
@@ -246,6 +246,27 @@ impl PartialEq for Vec3 {
     }
 }
 
+impl Sum<Self> for Vec3 {
+    fn sum<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = Self>,
+    {
+        iter.fold(
+            Self {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            |a, b| Self {
+                x: a.x + b.x,
+                y: a.y + b.y,
+                z: a.z + b.z,
+            },
+        )
+    }
+}
+
+// TESTS
 #[test]
 fn test_add() {
     let vec1 = Vec3::new(1.0, 1.0, 1.0);

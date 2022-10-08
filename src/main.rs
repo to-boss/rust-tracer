@@ -1,13 +1,9 @@
-use std::{
-    f32::INFINITY,
-    fs::File,
-    io::{Result, Write},
-};
+use std::{f32::INFINITY, io::Result};
 
 use rust_tracer::{
     camera::Camera,
-    color::*,
     hittable_list::HittableList,
+    img::{Img, Pixel},
     material::{Dialectric, Lambertian, Metal},
     ray::Ray,
     sphere::Sphere,
@@ -16,6 +12,7 @@ use rust_tracer::{
 };
 
 use rand::{rngs::ThreadRng, thread_rng, Rng};
+use rayon::prelude::*;
 
 macro_rules! sphere {
     ($center:ident, $radius:literal, $mat:ident) => {
@@ -27,12 +24,11 @@ macro_rules! sphere {
 }
 
 fn main() -> Result<()> {
-    let mut rng = thread_rng();
-
     // Image
     const ASPECT_RATIO: f32 = 16. / 9.;
     const IMG_WIDTH: u32 = 400;
     const IMG_HEIGHT: u32 = ((IMG_WIDTH as f32) / ASPECT_RATIO) as u32;
+    let mut img = Img::new(IMG_HEIGHT, IMG_WIDTH);
 
     // World Setup
     let world = random_scene();
@@ -55,28 +51,44 @@ fn main() -> Result<()> {
     );
 
     // Render
-    let mut img_file = File::create("image.ppm")?;
-    let mut file_content = String::new();
-    file_content.push_str(format!("P3\n{} {} \n255\n", IMG_WIDTH, IMG_HEIGHT).as_str());
+    let image = (0..IMG_HEIGHT)
+        .into_par_iter()
+        .rev()
+        .flat_map(|y| {
+            println!("\rScanlines remaining: {} ", y);
+            (0..IMG_HEIGHT)
+                .flat_map(|x| {
+                    let col: Color = (0..SAMPLES_PER_PIXEL)
+                        .map(|_| {
+                            let mut rng = thread_rng();
+                            let r1: f32 = rng.gen_range(0.0..1.0);
+                            let r2: f32 = rng.gen_range(0.0..1.0);
+                            let u = (x as f32 + r1) / (IMG_WIDTH as f32 - 1.);
+                            let v = (y as f32 + r2) / (IMG_HEIGHT as f32 - 1.);
+                            let ray = camera.get_ray(u, v);
+                            ray_color(&ray, &world, 0)
+                        })
+                        .sum();
+                    let col = vec![col.x, col.y, col.z];
+                    col.iter().map(|c| *c as u8).collect::<Vec<u8>>()
+                })
+                .collect::<Vec<u8>>()
+        })
+        .collect::<Vec<u8>>();
 
-    for j in (0..IMG_HEIGHT).rev() {
-        println!("\rScanlines remaining: {} ", j);
-        for i in 0..IMG_WIDTH {
-            let mut pixel_color = Color::new(0., 0., 0.);
-            for _ in 0..SAMPLES_PER_PIXEL {
-                let r1: f32 = rng.gen_range(0.0..1.0);
-                let r2: f32 = rng.gen_range(0.0..1.0);
-                let u = (i as f32 + r1) / (IMG_WIDTH as f32 - 1.);
-                let v = (j as f32 + r2) / (IMG_HEIGHT as f32 - 1.);
-                let ray = camera.get_ray(u, v);
-                pixel_color += ray_color(&ray, &world, 0);
-            }
-            add_color_to_string(&mut file_content, &pixel_color);
-        }
+    for pixel in image.chunks(3) {
+        img.add_pixel(&Color::new(
+            pixel[0] as f32,
+            pixel[1] as f32,
+            pixel[2] as f32,
+        ));
     }
 
-    img_file.write_all(file_content.as_bytes())?;
-    println!("Done.");
+    match img.save_file() {
+        Ok(()) => println!("Saved file {}!", img.name),
+        Err(_) => println!("Error while saving file."),
+    };
+
     Ok(())
 }
 
